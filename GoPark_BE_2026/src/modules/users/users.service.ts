@@ -2,21 +2,26 @@
   Injectable,
   NotFoundException,
   BadRequestException,
+  InternalServerErrorException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { MoreThanOrEqual, Repository } from 'typeorm';
 import { User } from './entities/user.entity';
 import { Role } from './entities/role.entity';
 import { UserRole } from './entities/user-role.entity';
 import { Profile } from './entities/profile.entity';
 import { UserResDto } from './dto/user-res.dto';
+import { Review } from './entities/review.entity';
+import { UserRoleEnum } from '../../common/enums/role.enum';
 
 @Injectable()
 export class UsersService {
   constructor(
+    private readonly configService: ConfigService,
     @InjectRepository(User)
     private usersRepository: Repository<User>,
     @InjectRepository(Role)
@@ -25,6 +30,8 @@ export class UsersService {
     private userRoleRepository: Repository<UserRole>,
     @InjectRepository(Profile)
     private profileRepository: Repository<Profile>,
+    @InjectRepository(Review)
+    private ratingUser: Repository<Review>,
   ) {}
   // Tạo người dùng mới với vai trò mặc định là "USER" và thông tin hồ sơ nếu có
   async create(createUserDto: CreateUserDto) {
@@ -101,11 +108,69 @@ export class UsersService {
       },
     };
   }
+  // ========== Lấy danh sách người dùng có phân trang và tìm kiếm theo email hoặc tên, bao gồm thông tin vai trò, hồ sơ và phương tiện của họ ================
+  async findAllPaginatedWithSearch(
+    page = 1,
+    limit = 10,
+    search?: string,
+    roleName?: UserRoleEnum,
+  ) {
+    const currentPage = Math.max(1, Number(page) || 1);
+    const itemsPerPage = Math.min(100, Math.max(1, Number(limit) || 10));
+
+    let queryBuilder = this.usersRepository
+      .createQueryBuilder('user')
+      .leftJoin('user.userRoles', 'userRoles')
+      .leftJoin('userRoles.role', 'role')
+      .leftJoinAndSelect('user.profile', 'profile')
+      .select([
+        'user.id',
+        'user.email',
+        'user.status',
+        'user.createdAt',
+        'profile.id',
+        'profile.name',
+        'profile.phone',
+      ])
+      .where('role.name = :roleName', { roleName: roleName });
+    if (search) {
+      queryBuilder = queryBuilder.andWhere(
+        'user.email ILIKE :search OR profile.name ILIKE :search',
+        { search: `%${search}%` },
+      );
+    }
+
+    const [items, totalItems] = await queryBuilder
+      .orderBy('user.createdAt', 'DESC')
+      .skip((currentPage - 1) * itemsPerPage)
+      .take(itemsPerPage)
+      .getManyAndCount();
+
+    return {
+      items,
+      meta: {
+        totalItems,
+        itemCount: items.length,
+        itemsPerPage,
+        totalPages: Math.ceil(totalItems / itemsPerPage) || 1,
+        currentPage,
+      },
+    };
+  }
+
   // Lấy thông tin chi tiết một người dùng theo ID, bao gồm thông tin vai trò, hồ sơ và phương tiện của họ
   async findOne(id: string) {
     const user = await this.usersRepository.findOne({
       where: { id },
-      relations: ['userRoles', 'userRoles.role', 'profile', 'vehicles'],
+      relations: [
+        'userRoles',
+        'userRoles.role',
+        'profile',
+        'vehicles',
+        'bookings',
+        'bookings.qrCode',
+        'bookings.vehicle',
+      ],
     });
     if (!user)
       throw new NotFoundException(`Không tìm thấy người dùng với ID ${id}`);
@@ -201,6 +266,76 @@ export class UsersService {
     return this.findOne(userId);
   }
 
+  // Upload ảnh đại diện của người dùng lên Supabase Storage, sau đó cập nhật URL ảnh vào hồ sơ người dùng
+  async uploadAvatar(userId: string, file: Express.Multer.File) {
+    const supabaseUrl = this.configService.get<string>('SUPABASE_URL')?.trim();
+    const serviceRoleKey = this.configService
+      .get<string>('SUPABASE_SERVICE_ROLE_KEY')
+      ?.trim()
+      .replace(/^['"]|['"]$/g, '');
+    const bucket =
+      this.configService.get<string>('SUPABASE_BUCKET')?.trim() || 'IMG_GOPARK2026';
+    const avatarFolder =
+      this.configService.get<string>('SUPABASE_AVATAR_FOLDER')?.trim() || 'avatars';
+
+    if (!supabaseUrl || !serviceRoleKey) throw new InternalServerErrorException('Thiếu cấu hình SUPABASE');
+
+    const extension = (file.originalname?.split('.').pop() || 'jpg').toLowerCase();
+    const safeExt = extension.replace(/[^a-z0-9]/g, '') || 'jpg';
+    const filePath = `${avatarFolder}/${userId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${safeExt}`;
+    const candidateBuckets = Array.from(new Set([bucket, 'img_GoPark2026', 'IMG_GOPARK2026'].filter(Boolean)));
+    let usedBucket: string | null = null;
+
+    for (const candidateBucket of candidateBuckets) {
+      const uploadUrl = `${supabaseUrl}/storage/v1/object/${candidateBucket}/${filePath}`;
+      const uploadResponse = await fetch(uploadUrl, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${serviceRoleKey}`,
+          apikey: serviceRoleKey,
+          'Content-Type': file.mimetype,
+          'x-upsert': 'false',
+        },
+        body: new Uint8Array(file.buffer),
+      });
+
+      if (uploadResponse.ok) {
+        usedBucket = candidateBucket;
+        break;
+      }
+    }
+
+    const publicUrl = `${supabaseUrl}/storage/v1/object/public/${usedBucket}/${filePath}`;
+    let resolvedImageUrl = publicUrl;
+
+    if (usedBucket) {
+      try {
+        const signUrl = `${supabaseUrl}/storage/v1/object/sign/${usedBucket}/${filePath}`;
+        const signResponse = await fetch(signUrl, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${serviceRoleKey}`,
+            apikey: serviceRoleKey,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ expiresIn: 60 * 60 * 24 * 365 }),
+        });
+
+        if (signResponse.ok) {
+          const signData = await signResponse.json();
+          const signedPath = signData?.signedURL || signData?.signedUrl;
+          if (signedPath) {
+            // FIX: prepend /storage/v1 since Supabase signedURL returns a path without it
+            const fixPath = signedPath.startsWith('/storage/v1') ? signedPath : `/storage/v1${signedPath.startsWith('/') ? '' : '/'}${signedPath}`;
+            resolvedImageUrl = signedPath.startsWith('http') ? signedPath : `${supabaseUrl}${fixPath}`;
+          }
+        }
+      } catch (e) {}
+    }
+
+    return this.updateProfile(userId, { image: resolvedImageUrl });
+  }
+
   // =========== Lấy name bằng userId ================
   async getNameByUserId(userId: string): Promise<string> {
     const user = await this.usersRepository.findOne({
@@ -211,5 +346,100 @@ export class UsersService {
       throw new NotFoundException(`Không tìm thấy người dùng với ID ${userId}`);
     }
     return user.profile?.name || 'Tên không có';
+  }
+
+  // =========== Đếm tổng số người dùng và owners ================
+  async countTotalUserWithRole(role: UserRoleEnum) {
+    return this.usersRepository.count({
+      relations: ['userRoles', 'userRoles.role'],
+      where: {
+        userRoles: {
+          role: {
+            name: role,
+          },
+        },
+      },
+    });
+  }
+
+  async countTotalUsers() {
+    return this.usersRepository.count();
+  }
+
+  // =========== Đếm số người dùng mới trong 1 tháng qua ================
+  async countNewUsersInLastMonth() {
+    const oneMonthAgo = new Date();
+    oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
+
+    return this.usersRepository.count({
+      where: {
+        createdAt: MoreThanOrEqual(oneMonthAgo),
+      },
+    });
+  }
+  // =========== Đếm số người dùng mới trong 1 tháng qua theo role ================
+  async countNewUsersInLastMonthWithRole(role: UserRoleEnum) {
+    const oneMonthAgo = new Date();
+    oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
+
+    return this.usersRepository.count({
+      relations: ['userRoles', 'userRoles.role'],
+      where: {
+        userRoles: {
+          role: {
+            name: role,
+          },
+        },
+        createdAt: MoreThanOrEqual(oneMonthAgo),
+      },
+    });
+  }
+
+  // =========== đếm số user bị khóa ================
+  async countBlockedUsers() {
+    return this.usersRepository.count({
+      where: {
+        status: 'BLOCKED',
+      },
+    });
+  }
+
+  // ============ đếm số user bị khóa theo role ================
+  async countBlockedUsersWithRole(role: UserRoleEnum) {
+    return this.usersRepository.count({
+      relations: ['userRoles', 'userRoles.role'],
+      where: {
+        status: 'BLOCKED',
+        userRoles: {
+          role: {
+            name: role,
+          },
+        },
+      },
+    });
+  }
+
+  // =========== đếm số user còn hoạt động ================
+  async countActiveUsers() {
+    return this.usersRepository.count({
+      where: {
+        status: 'ACTIVE',
+      },
+    });
+  }
+
+  // =========== đếm số user còn hoạt động theo role ================
+  async countActiveUserWithRole(role: UserRoleEnum) {
+    return this.usersRepository.count({
+      relations: ['userRoles', 'userRoles.role'],
+      where: {
+        status: 'ACTIVE',
+        userRoles: {
+          role: {
+            name: role,
+          },
+        },
+      },
+    });
   }
 }

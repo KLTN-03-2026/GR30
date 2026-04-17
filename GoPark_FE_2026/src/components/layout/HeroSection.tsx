@@ -1,7 +1,8 @@
 "use client";
 import React, { useState, useEffect } from "react";
-import { MapPin, Clock, Ticket, BadgeCheck, Zap, Navigation, Plus, User as UserIcon, Search, Settings, Send, PhoneCall, Shield, Home, Car, ChevronDown, X, ChevronLeft, ChevronRight } from "lucide-react";
+import { MapPin, Clock, Ticket, BadgeCheck, Zap, Navigation, Plus, User as UserIcon, Search, Settings, Send, PhoneCall, Shield, Home, Car, ChevronDown, X, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth.store";
+import { parkingService } from "@/services/parking.service";
 
 // Mock Data
 const mockAllParkings = [
@@ -18,10 +19,10 @@ const mockAllParkings = [
       overnight: "120,000 VND",
     },
     amenities: [
-      { label: "Mái che", icon: Home, color: "text-blue-500" },
-      { label: "Sạc xe EV", icon: Zap, color: "text-amber-500" },
-      { label: "Bảo vệ 24/7", icon: Shield, color: "text-emerald-500" },
-      { label: "Vé tháng", icon: Ticket, color: "text-purple-500" },
+      { label: "Quy mô", sub: "150 vị trí", icon: Home, color: "text-blue-500" },
+      { label: "Chỗ trống", sub: "89 rảnh", icon: Zap, color: "text-amber-500" },
+      { label: "Hoạt động", sub: "24/7", icon: Shield, color: "text-emerald-500" },
+      { label: "Trạng thái", sub: "Sẵn sàng", icon: Ticket, color: "text-purple-500" },
     ],
     bgImage: "book.png",
   },
@@ -38,9 +39,9 @@ const mockAllParkings = [
       overnight: "Không nhận",
     },
     amenities: [
-      { label: "Trong nhà", icon: Home, color: "text-blue-500" },
-      { label: "Bảo vệ 24/7", icon: Shield, color: "text-emerald-500" },
-      { label: "Rửa xe", icon: Zap, color: "text-amber-500" },
+      { label: "Quy mô", sub: "200 vị trí", icon: Home, color: "text-blue-500" },
+      { label: "Chỗ trống", sub: "12 rảnh", icon: Shield, color: "text-emerald-500" },
+      { label: "Hoạt động", sub: "8:00 - 22:00", icon: Zap, color: "text-amber-500" },
     ],
     bgImage: "book.png", 
   },
@@ -57,9 +58,9 @@ const mockAllParkings = [
       overnight: "150,000 VND",
     },
     amenities: [
-      { label: "Mái che", icon: Home, color: "text-blue-500" },
-      { label: "Camera 24/7", icon: Shield, color: "text-emerald-500" },
-      { label: "Đưa đón", icon: Navigation, color: "text-purple-500" },
+      { label: "Quy mô", sub: "500 vị trí", icon: Home, color: "text-blue-500" },
+      { label: "Chỗ trống", sub: "150 rảnh", icon: Shield, color: "text-emerald-500" },
+      { label: "Hoạt động", sub: "24/7", icon: Navigation, color: "text-purple-500" },
     ],
     bgImage: "bg.jpg",
   }
@@ -78,34 +79,86 @@ const HeroSection = () => {
   const [activeTab, setActiveTab] = useState("all");
   const [currentIndex, setCurrentIndex] = useState(0);
   const [slideDirection, setSlideDirection] = useState("left");
+  const [parkings, setParkings] = useState<Record<string, any>[]>(mockAllParkings);
+  const [loading, setLoading] = useState(true);
 
   const user = useAuthStore((state) => state.user);
 
   useEffect(() => {
-    if (activeTab !== "all") return;
+    const fetchHomeParkings = async () => {
+      try {
+        setLoading(true);
+        const res = await parkingService.getAllParkingLots();
+        const data = res.data || (Array.isArray(res) ? res : []);
+        
+        if (data.length > 0) {
+          const mappedParkings = data.map((lot: Record<string, any>) => {
+            const openTimeStr = lot.open_time ? new Date(lot.open_time).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : null;
+            const closeTimeStr = lot.close_time ? new Date(lot.close_time).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : null;
+            const formattedTimeOpen = openTimeStr && closeTimeStr && openTimeStr !== "Invalid Date" ? `${openTimeStr} - ${closeTimeStr}` : "24/7";
+
+            return {
+              id: lot.id,
+              name: lot.name,
+              address: lot.address,
+              description: lot.description || "Bãi đỗ xe an toàn, tiện lợi, hỗ trợ 24/7",
+              status: lot.available_slots > 0 ? "Mở cửa" : "Hết chỗ",
+              timeOpen: formattedTimeOpen,
+              availableSpots: lot.available_slots || 0,
+              totalSpots: lot.total_slots || 0,
+              pricing: {
+                firstHour: `${new Intl.NumberFormat('vi-VN').format(lot.minprice || lot.minPrice || 15000)} VND`,
+                nextHour: lot.maxprice ? `${new Intl.NumberFormat('vi-VN').format(Math.floor(lot.maxprice / 2))} VND` : "10,000 VND",
+                overnight: lot.maxprice ? `${new Intl.NumberFormat('vi-VN').format(lot.maxprice * 4)} VND` : "150,000 VND",
+              },
+              amenities: [
+                { label: "Quy mô", sub: `${lot.total_slots || 0} vị trí`, icon: Car, color: "text-blue-500" },
+                { label: "Chỗ trống", sub: `${lot.available_slots || 0} khả dụng`, icon: BadgeCheck, color: "text-emerald-500" },
+                { label: "Hoạt động", sub: lot.operating_days || "Thứ 2 - CN", icon: Clock, color: "text-amber-500" },
+                { label: "Trạng thái", sub: (!lot.status || lot.status === "ACTIVE" || lot.available_slots > 0) ? "Sẵn sàng" : "Đã đầy", icon: Shield, color: "text-purple-500" }
+              ],
+              bgImage: lot.image || "book.png",
+              owner: lot.owner,
+            };
+          });
+          setParkings(mappedParkings);
+        }
+      } catch (err) {
+        console.error("Lỗi lấy dữ liệu bãi đỗ:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchHomeParkings();
+  }, []);
+
+  useEffect(() => {
+    if (activeTab !== "all" || parkings.length === 0) return;
     
     const interval = setInterval(() => {
       setSlideDirection("left");
-      setCurrentIndex((prev) => (prev + 1) % mockAllParkings.length);
+      setCurrentIndex((prev) => (prev + 1) % parkings.length);
       setIsNameExpanded(false); // reset details when sliding
     }, 10000);
 
     return () => clearInterval(interval);
-  }, [activeTab]);
+  }, [activeTab, parkings.length]);
 
   const handleNext = () => {
+    if (parkings.length === 0) return;
     setSlideDirection("left");
-    setCurrentIndex((prev) => (prev + 1) % mockAllParkings.length);
+    setCurrentIndex((prev) => (prev + 1) % parkings.length);
     setIsNameExpanded(false);
   };
 
   const handlePrev = () => {
+    if (parkings.length === 0) return;
     setSlideDirection("right");
-    setCurrentIndex((prev) => (prev - 1 + mockAllParkings.length) % mockAllParkings.length);
+    setCurrentIndex((prev) => (prev - 1 + parkings.length) % parkings.length);
     setIsNameExpanded(false);
   };
 
-  const currentParkingData = mockAllParkings[currentIndex];
+  const currentParkingData = parkings[currentIndex] || mockAllParkings[0];
 
   return (
     <section className="relative w-full min-h-screen bg-[#F0F2F5] dark:bg-stone-900 overflow-hidden font-sans p-4 sm:p-6 md:p-10 flex flex-col">
@@ -360,17 +413,17 @@ const HeroSection = () => {
         {/* LEFT COLUMN: GREETING & FLOATING CONTROLS */}
         <div className="lg:col-span-4 xl:col-span-3 flex flex-col justify-center z-20 text-center md:text-left relative overflow-hidden">
           <div className="relative w-full h-[200px] md:h-[250px]">
-            {mockAllParkings.map((parking, index) => (
+              {parkings.map((parking, index) => (
               <div
                 key={`info-${index}`}
                 className={`absolute inset-0 flex flex-col transition-all duration-700 ease-in-out ${
                   index === currentIndex
                     ? "opacity-100 translate-x-0"
                     : slideDirection === "left"
-                    ? index < currentIndex || (currentIndex === 0 && index === mockAllParkings.length - 1)
-                      ? "opacity-0 -translate-x-full"
-                      : "opacity-0 translate-x-full"
-                    : index > currentIndex || (currentIndex === mockAllParkings.length - 1 && index === 0)
+                      ? index < currentIndex || (currentIndex === 0 && index === parkings.length - 1)
+                        ? "opacity-0 -translate-x-full"
+                        : "opacity-0 translate-x-full"
+                      : index > currentIndex || (currentIndex === parkings.length - 1 && index === 0)
                     ? "opacity-0 translate-x-full"
                     : "opacity-0 -translate-x-full"
                 }`}
@@ -414,7 +467,7 @@ const HeroSection = () => {
                 <ChevronRight className="w-5 h-5" />
              </button>
              <div className="flex items-center gap-1.5 ml-2">
-                {mockAllParkings.map((_, i) => (
+                {parkings.map((_, i) => (
                   <div key={i} className={`h-1.5 rounded-full transition-all duration-300 ${i === currentIndex ? 'w-5 bg-black dark:bg-white' : 'w-1.5 bg-gray-300 dark:bg-stone-600'}`}></div>
                 ))}
              </div>
@@ -423,17 +476,17 @@ const HeroSection = () => {
 
         {/* CENTER COLUMN: CAR IMAGE */}
         <div className="lg:col-span-4 xl:col-span-5 relative flex items-center justify-center min-h-[250px] md:min-h-[300px] z-0 -mx-4 md:mx-0 overflow-hidden">
-          {mockAllParkings.map((parking, index) => (
+          {parkings.map((parking, index) => (
             <div
               key={`img-${index}`}
               className={`absolute inset-0 flex items-center justify-center transition-transform duration-700 ease-in-out ${
                 index === currentIndex
                   ? "translate-x-0"
                   : slideDirection === "left"
-                  ? index < currentIndex || (currentIndex === 0 && index === mockAllParkings.length - 1)
+                  ? index < currentIndex || (currentIndex === 0 && index === parkings.length - 1)
                     ? "-translate-x-[120%]"
                     : "translate-x-[120%]"
-                  : index > currentIndex || (currentIndex === mockAllParkings.length - 1 && index === 0)
+                  : index > currentIndex || (currentIndex === parkings.length - 1 && index === 0)
                   ? "translate-x-[120%]"
                   : "-translate-x-[120%]"
               }`}
@@ -468,7 +521,7 @@ const HeroSection = () => {
                   <item.icon className={`w-5 h-5 ${item.color}`} />
                   <div>
                     <p className="text-xs font-bold">{item.label}</p>
-                    <p className="text-[10px] text-gray-500">Khu vực ưu tiên</p>
+                    <p className="text-[10px] text-gray-500">{item.sub}</p>
                   </div>
                 </div>
               ))}
@@ -529,12 +582,16 @@ const HeroSection = () => {
             <h3 className="font-bold">Nhân viên hỗ trợ bãi đỗ</h3>
             <p className="text-xs text-gray-500 max-w-[200px] mt-1">Liên hệ với chúng tôi để nhận khuyến mãi vé tháng ngay hôm nay</p>
             <div className="flex items-center gap-2 mt-4">
-              <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center">
-                <UserIcon className="w-4 h-4 text-blue-600" />
+              <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center overflow-hidden">
+                {currentParkingData?.owner?.avatar ? (
+                  <img src={currentParkingData.owner.avatar} alt="avatar" className="w-full h-full object-cover" />
+                ) : (
+                  <UserIcon className="w-4 h-4 text-blue-600" />
+                )}
               </div>
               <div>
-                <p className="text-sm font-bold">Thành Nam</p>
-                <p className="text-[10px] text-gray-500">Kinh nghiệm 4 năm</p>
+                <p className="text-sm font-bold">{currentParkingData?.owner?.name || currentParkingData?.owner?.username || "Chưa cập nhật"}</p>
+                <p className="text-[10px] text-gray-500">{currentParkingData?.owner?.phone || "Chủ bãi đỗ"}</p>
               </div>
             </div>
           </div>
@@ -543,17 +600,22 @@ const HeroSection = () => {
           </button>
         </div>
 
-        {/* Khung giờ trống */}
+        {/* Thông tin bãi đỗ */}
         <div className="bg-white/70 dark:bg-stone-800/70 backdrop-blur-2xl p-5 rounded-[2rem] shadow-xl border border-white/40 dark:border-white/10 flex flex-col py-6 transition-all duration-300">
-          <h3 className="font-bold flex items-center gap-2"><Clock className="w-4 h-4 text-amber-500"/> Thời gian bãi trống</h3>
-          <p className="text-xs text-gray-500 mt-1">Hôm nay, 21 Tháng 3, 2026</p>
-          <div className="flex items-center justify-between mt-auto px-4 bg-white/50 dark:bg-black/20 py-4 rounded-xl shadow-inner">
+          <h3 className="font-bold flex items-center gap-2"><Clock className="w-4 h-4 text-amber-500"/> Thời gian hoạt động</h3>
+          <p className="text-xs text-gray-500 mt-1 line-clamp-1">{currentParkingData.address}</p>
+          <div className="flex items-center justify-between px-4 bg-white/50 dark:bg-black/20 py-4 rounded-xl shadow-inner mt-4 mb-4">
             <button className="text-gray-400">&lt;</button>
             <div className="text-center animate-in fade-in duration-500">
               <p className="text-sm font-semibold text-gray-500">Giờ hoạt động</p>
-              <h2 className="text-2xl font-light mt-1">{currentParkingData.timeOpen}</h2>
+              <h2 className="text-xl font-bold mt-1 text-emerald-600">{currentParkingData.timeOpen}</h2>
             </div>
             <button className="text-gray-400">&gt;</button>
+          </div>
+          <div className="mt-auto px-2">
+            <p className="text-sm text-gray-700 dark:text-gray-300 line-clamp-2">
+              <strong className="text-black dark:text-white">Thông tin:</strong> {currentParkingData.description}
+            </p>
           </div>
         </div>
 
@@ -573,7 +635,7 @@ const HeroSection = () => {
                <span className="text-sm font-medium">Qua đêm</span>
                <span className="font-bold text-primary">{currentParkingData.pricing.overnight}</span>
              </div>
-             <button onClick={() => window.location.href = `/users/detailParking/`} className="w-full bg-green-900 cursor-pointer dark:bg-white text-white dark:text-black py-3 rounded-xl font-bold hover:shadow-lg transition">
+             <button onClick={() => window.location.href = `/users/detailParking/${currentParkingData.id}`} className="w-full bg-green-900 cursor-pointer dark:bg-white text-white dark:text-black py-3 rounded-xl font-bold hover:shadow-lg transition">
                Đặt vé xe
              </button>
           </div>

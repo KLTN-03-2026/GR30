@@ -4,6 +4,7 @@ import { AppService } from './app.service';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { getDatabaseConfig } from './config/database/database.config';
+
 import { UsersModule } from './modules/users/users.module';
 import { WalletModule } from './modules/wallet/wallet.module';
 import { ParkingModule } from './modules/parking-lot/parking-lot.module';
@@ -16,8 +17,6 @@ import { VehiclesModule } from './modules/vehicles/vehicles.module';
 import { RequestModule } from './modules/request/request.module';
 import { NotificationModule } from './modules/notification/notification.module';
 import { BullModule } from '@nestjs/bull';
-import { GeminiModule } from './modules/gemini/gemini.module';
-
 
 @Module({
   imports: [
@@ -44,7 +43,6 @@ import { GeminiModule } from './modules/gemini/gemini.module';
     AdminModule,
     RequestModule,
     NotificationModule,
-    GeminiModule,
   ],
   controllers: [AppController],
   providers: [AppService],

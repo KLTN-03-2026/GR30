@@ -9,7 +9,11 @@
   HttpCode,
   UseGuards,
   Req,
+  UploadedFile,
+  UseInterceptors,
+  BadRequestException,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -53,6 +57,29 @@ export class UsersController {
     );
     return UserResDto.fromEntity(user);
   }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('me/avatar')
+  @UseInterceptors(FileInterceptor('file'))
+  async uploadAvatar(
+    @Req() req: any,
+    @UploadedFile() file: Express.Multer.File,
+  ): Promise<UserResDto> {
+    if (!file) {
+      throw new BadRequestException('Vui lòng chọn ảnh đại diện');
+    }
+
+    if (!file.mimetype?.startsWith('image/')) {
+      throw new BadRequestException('Chỉ hỗ trợ file ảnh');
+    }
+
+    if (file.size > 2 * 1024 * 1024) {
+      throw new BadRequestException('Vui lòng chọn ảnh nhỏ hơn 2MB');
+    }
+
+    const user = await this.usersService.uploadAvatar(req.user['userId'], file);
+    return UserResDto.fromEntity(user);
+  }
   // --------------------------------
 
   @Get(':id')
@@ -75,4 +102,5 @@ export class UsersController {
   remove(@Param('id') id: string) {
     return this.usersService.remove(id);
   }
+
 }

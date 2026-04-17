@@ -4,9 +4,23 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { useAuthStore } from "@/stores/auth.store";
-import { Bell, Settings, LogOut, ChevronDown, Sun, Moon, Wallet, Loader2, Home, Search, History, User, Contact, Menu, Building2 } from "lucide-react";
-
-
+import {
+  Bell,
+  Settings,
+  LogOut,
+  ChevronDown,
+  Sun,
+  Moon,
+  Wallet,
+  Loader2,
+  Home,
+  Search,
+  History,
+  User,
+  Contact,
+  Menu,
+  Building2,
+} from "lucide-react";
 import { useTheme } from "next-themes";
 import { useWallet } from "@/hooks/useWallet";
 
@@ -66,7 +80,7 @@ const Header = () => {
             Tìm bãi đỗ
           </Link>
           <Link
-            href="/users/myBooking"
+            href="/users/historyBooking"
             className="transition-colors hover:text-primary hover:font-semibold"
           >
             <History className="h-5 w-5 inline-block mr-1" />
@@ -119,7 +133,6 @@ const Header = () => {
                   onClick={() => setIsDropdownOpen(!isDropdownOpen)}
                   className="flex items-center gap-2 p-1.5 sm:pr-3 rounded-full border border-gray-200 dark:border-stone-700 hover:shadow-md transition-all bg-white dark:bg-stone-800"
                 >
-
                   <img
                     src={
                       user?.profile?.image || "https://i.pravatar.cc/150?img=11"
@@ -153,7 +166,6 @@ const Header = () => {
                           <Wallet className="h-4 w-4" />
                         </div>
                         <div className="flex flex-col">
-
                           <span className="text-[10px] sm:text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                             Số dư ví
                           </span>
@@ -175,6 +187,7 @@ const Header = () => {
                       <User className="h-4 w-4" />
                       Thông tin cá nhân
                     </Link>
+
                     <Link
                       href="/users/wallet"
                       className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-stone-800 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
@@ -182,6 +195,7 @@ const Header = () => {
                       <Wallet className="h-4 w-4" />
                       Quản lý Ví
                     </Link>
+
                     <Link
                       href="/users/requests"
                       className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-stone-800 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
