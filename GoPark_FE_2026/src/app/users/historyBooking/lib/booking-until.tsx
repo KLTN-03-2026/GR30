@@ -6,6 +6,7 @@ export const mapBookingData = (item: any) => {
 
     const [mainInvoice] = item.invoice || [];
 
+
     const formatDate = (date: Date) =>
         date.toLocaleDateString("vi-VN", {
             day: '2-digit',
