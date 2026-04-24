@@ -103,7 +103,6 @@ export function BookingForm() {
       setEndTime(end.format("YYYY-MM-DDTHH:mm"));
     }
 
-
   }, [dataLot])
 
   // 2. Tính toán các giá trị phụ thuộc (Sử dụng useMemo để tối ưu)
@@ -788,7 +787,6 @@ export function BookingForm() {
             className="group relative w-full bg-green-800 hover:bg-green-700 cursor-pointer text-white font-bold py-3.5 px-4 rounded-lg transition-all shadow-[0_4px_14px_0_rgba(22,163,74,0.39)] hover:shadow-[0_6px_20px_rgba(22,163,74,0.23)] active:scale-[0.98] text-lg overflow-hidden"
 
           >
-
             <div className="absolute inset-0 w-full h-full bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:animate-[shimmer_1.5s_infinite]"></div>
 
             <span className="flex items-center justify-center gap-2">
