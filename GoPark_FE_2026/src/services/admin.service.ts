@@ -170,13 +170,13 @@ export interface RecentTransaction {
 }
 
 /** Parking Lot related types */
-export type ParkingLotStatus = "active" | "pending" | "suspended" | "closed";
+export type ParkingLotStatus = "ACTIVE" | "PENDING" | "INACTIVE" | "CLOSED";
 export type ParkingLotType =
-  | "outdoor"
-  | "indoor"
-  | "underground"
-  | "rooftop"
-  | "multi-level";
+  | "OUTDOOR"
+  | "INDOOR"
+  | "UNDERGROUND"
+  | "ROOFTOP"
+  | "MULTI_LEVEL";
 
 export interface OwnerInfoShort {
   _id: string;
@@ -203,9 +203,9 @@ export interface ParkingLot {
   availableSlots: number;
   occupiedSlots: number;
   pricePerHour: {
-    zonename: string;
-    priceperhour: number;
-    priceperday: number;
+    zonename?: string;
+    pricePerHour: number;
+    pricePerDay: number;
   }[];
   rating: number;
   totalReviews: number;
@@ -243,9 +243,9 @@ export interface ParkingLotItem {
   };
   totalSpaces: number;
   pricePerHour: {
-    zonename: string;
-    priceperhour: number;
-    priceperday: number;
+    zonename?: string;
+    pricePerHour: number;
+    pricePerDay: number;
   }[];
   averageRating: string;
   totalReviews: number;
@@ -327,11 +327,10 @@ class AdminService {
    * Get recent activities for admin dashboard
    * GET /api/v1/admin/stats/activities-recent
    */
-  async getRecentActivities(): Promise<AdminActivity[]> {
-    const response = await get<ApiResponse<AdminActivity[]>>(
-      "/admin/stats/activities-recent",
-    );
-    return response.data;
+  async getRecentActivities(page?: number, limit?: number): Promise<{ data: AdminActivity[], total: number }> {
+    const url = page && limit ? `/admin/stats/activities-recent?page=${page}&limit=${limit}` : "/admin/stats/activities-recent";
+    const response = await get<any>(url);
+    return { data: response.data || [], total: response.count || response.data?.length || 0 };
   }
 
   /**
